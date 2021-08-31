@@ -426,7 +426,7 @@ static int sdr_open_rtl(sdr_dev_t **out_dev, char const *dev_query, int verbose)
                         i, rtlsdr_get_device_name(i));
             dev->sample_size = sizeof(uint8_t) * 2; // CU8
             dev->sample_signed = 0;
-
+            rtlsdr_set_bias_tee(dev, 1);
             size_t info_len = 41 + strlen(vendor) + strlen(product) + strlen(serial);
             dev->dev_info = malloc(info_len);
             if (!dev->dev_info)
