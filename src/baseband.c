@@ -16,12 +16,13 @@
 #include <string.h>
 #include <math.h>
 
+#include "logger.h"
 #include "r_util.h"
 
 static uint16_t scaled_squares[256];
 
 /// precalculate lookup table for envelope detection.
-static void calc_squares()
+static void calc_squares(void)
 {
     if (scaled_squares[0])
         return; // already initialized
@@ -122,6 +123,10 @@ float magnitude_true_cs16(int16_t const *iq_buf, uint16_t *y_buf, uint32_t len)
     return len > 0 && sum >= len ? MAG_TO_DB((float)sum / len) : MAG_TO_DB(1);
 }
 
+void baseband_low_pass_filter_reset(filter_state_t *lowpass_filter)
+{
+    *lowpass_filter = (filter_state_t){0};
+}
 
 // Fixed-point arithmetic on Q0.15
 #define F_SCALE 15
@@ -134,10 +139,10 @@ float magnitude_true_cs16(int16_t const *iq_buf, uint16_t *y_buf, uint32_t len)
     - Q1.15*Q15.0 = Q16.15
     - Q16.15>>1 = Q15.14
     - Q15.14 + Q15.14 + Q15.14 could possibly overflow to 17.14
-    - but the b coeffs are small so it wont happen
+    - but the b coeffs are small so it won't happen
     - Q15.14>>14 = Q15.0
 */
-void baseband_low_pass_filter(uint16_t const *x_buf, int16_t *y_buf, uint32_t len, filter_state_t *state)
+void baseband_low_pass_filter(filter_state_t *state, uint16_t const *x_buf, int16_t *y_buf, uint32_t len)
 {
     ///  [b,a] = butter(1, 0.01) -> 3x tau (95%) ~100 samples
     //static int const a[FILTER_ORDER + 1] = {FIX(1.00000) >> 1, FIX(0.96907) >> 1};
@@ -196,8 +201,13 @@ static int16_t atan2_int16(int32_t y, int32_t x)
     return angle;
 }
 
+void baseband_demod_FM_reset(demodfm_state_t *demod_fm)
+{
+    *demod_fm = (demodfm_state_t){0};
+}
+
 /// Fast Instantaneous frequency and Low Pass filter, CU8 samples
-void baseband_demod_FM(uint8_t const *x_buf, int16_t *y_buf, unsigned long num_samples, uint32_t samp_rate, float low_pass, demodfm_state_t *state)
+void baseband_demod_FM(demodfm_state_t *state, uint8_t const *x_buf, int16_t *y_buf, unsigned long num_samples, uint32_t samp_rate, float low_pass)
 {
     // Select filter coeffs, [b,a] = butter(1, cutoff)
     // e.g [b,a] = butter(1, 0.1) -> 3x tau (95%) ~10 samples, 250k -> 40us, 1024k -> 10us
@@ -210,8 +220,8 @@ void baseband_demod_FM(uint8_t const *x_buf, int16_t *y_buf, unsigned long num_s
         } else if (low_pass >= 1.0f) {
             low_pass = 1e6f / low_pass / samp_rate;
         }
-        fprintf(stderr, "%s: low pass filter for %u Hz at cutoff %.0f Hz, %.1f us\n",
-                __func__, samp_rate, samp_rate * low_pass, 1e6 / (samp_rate * low_pass));
+        print_logf(LOG_NOTICE, "Baseband", "low pass filter for %u Hz at cutoff %.0f Hz, %.1f us",
+                samp_rate, samp_rate * low_pass, 1e6 / (samp_rate * low_pass));
         double ita  = 1.0 / tan(M_PI_2 * low_pass);
         double gain = 1.0 / (1.0 + ita) / 2; // prescaled by div 2
         state->alp_16[0] = FIX(1.0);
@@ -290,7 +300,7 @@ static int32_t atan2_int32(int32_t y, int32_t x)
 }
 
 /// Fast Instantaneous frequency and Low Pass filter, CS16 samples.
-void baseband_demod_FM_cs16(int16_t const *x_buf, int16_t *y_buf, unsigned long num_samples, uint32_t samp_rate, float low_pass, demodfm_state_t *state)
+void baseband_demod_FM_cs16(demodfm_state_t *state, int16_t const *x_buf, int16_t *y_buf, unsigned long num_samples, uint32_t samp_rate, float low_pass)
 {
     // Select filter coeffs, [b,a] = butter(1, cutoff)
     // e.g [b,a] = butter(1, 0.1) -> 3x tau (95%) ~10 samples, 250k -> 40us, 1024k -> 10us
@@ -303,8 +313,8 @@ void baseband_demod_FM_cs16(int16_t const *x_buf, int16_t *y_buf, unsigned long 
         } else if (low_pass >= 1.0f) {
             low_pass = 1e6f / low_pass / samp_rate;
         }
-        fprintf(stderr, "%s: low pass filter for %u Hz at cutoff %.0f Hz, %.1f us\n",
-                __func__, samp_rate, samp_rate * low_pass, 1e6 / (samp_rate * low_pass));
+        print_logf(LOG_NOTICE, "Baseband", "low pass filter for %u Hz at cutoff %.0f Hz, %.1f us",
+                samp_rate, samp_rate * low_pass, 1e6 / (samp_rate * low_pass));
         double ita  = 1.0 / tan(M_PI_2 * low_pass);
         double gain = 1.0 / (1.0 + ita);
         state->alp_32[0] = FIX32(1.0);
